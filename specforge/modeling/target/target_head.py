@@ -32,7 +32,7 @@ class TargetHead(nn.Module):
             cache_dir=cache_dir,
         )
         target_head.freeze_weights()
-        target_head = target_head.eval().cuda().to(torch.bfloat16)
+        target_head = target_head.eval().npu().to(torch.bfloat16)
         return target_head
 
     @torch.no_grad()

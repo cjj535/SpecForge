@@ -36,7 +36,7 @@ from datasets import load_dataset
 from tqdm import tqdm
 from transformers import AutoConfig, AutoProcessor, AutoTokenizer
 
-from specforge.args import SGLangBackendArgs
+# from specforge.args import SGLangBackendArgs
 from specforge.data import build_eagle3_dataset, prepare_dp_dataloaders
 from specforge.distributed import (
     destroy_distributed,
@@ -117,8 +117,8 @@ def parse_args():
         help="Number of files per subdirectory.",
     )
 
-    sglang_group = parser.add_argument_group("sglang")
-    SGLangBackendArgs.add_args(sglang_group)
+    # sglang_group = parser.add_argument_group("sglang")
+    # SGLangBackendArgs.add_args(sglang_group)
     return parser.parse_args()
 
 
@@ -145,10 +145,11 @@ def build_target_model(
                 ),
             )
             .eval()
-            .cuda()
+            .npu()
         )
     else:
-        target_model_kwargs = SGLangBackendArgs.from_args(args).to_kwargs()
+        # target_model_kwargs = SGLangBackendArgs.from_args(args).to_kwargs()
+        target_model_kwargs = {}
         target_model = get_eagle3_target_model(
             pretrained_model_name_or_path=args.target_model_path,
             backend="sglang",  # we set this as the default backend to minimize precision mismatch in training and serving
@@ -157,7 +158,7 @@ def build_target_model(
                 if hasattr(model_config, "dtype")
                 else model_config.torch_dtype
             ),
-            device="cuda",
+            device="npu",
             cache_dir=args.model_download_dir,
             **target_model_kwargs,
         )
@@ -404,11 +405,11 @@ class HiddenStatesGenerator:
                     output_path, current_batch_indices
                 )
                 exists_tensor = torch.tensor(
-                    exists_list, dtype=torch.bool, device="cuda"
+                    exists_list, dtype=torch.bool, device="npu"
                 )
             else:
                 exists_tensor = torch.tensor(
-                    [False] * batch_size, dtype=torch.bool, device="cuda"
+                    [False] * batch_size, dtype=torch.bool, device="npu"
                 )
             dist.broadcast(exists_tensor, src=tp_rank_0_global, group=tp_group)
 
@@ -445,7 +446,7 @@ class HiddenStatesGenerator:
                 continue
 
             filtered_batch_gpu = {
-                k: v.cuda(non_blocking=True) for k, v in filtered_batch.items()
+                k: v.npu(non_blocking=True) for k, v in filtered_batch.items()
             }
 
             _, _, aux_hidden_states_list, last_hidden_states_list = self.model.extend(
@@ -501,7 +502,7 @@ class HiddenStatesGenerator:
             del aux_hidden_states_list, last_hidden_states_list, filtered_batch
 
             if batch_idx % 5 == 0:  # Make GC and cache clearing more frequent
-                torch.cuda.empty_cache()
+                torch_npu.npu.empty_cache()
                 gc.collect()
 
             if self.show_progress:

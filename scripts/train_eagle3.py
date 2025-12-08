@@ -24,7 +24,8 @@ from specforge import (
     OnlineEagle3Model,
     QwenVLOnlineEagle3Model,
 )
-from specforge.args import SGLangBackendArgs, TrackerArgs
+# from specforge.args import SGLangBackendArgs, TrackerArgs
+from specforge.args import TrackerArgs
 from specforge.data import (
     build_eagle3_dataset,
     build_offline_eagle3_dataset,
@@ -200,8 +201,8 @@ def parse_args() -> Tuple[ArgumentParser, Namespace]:
     profiling_group.add_argument("--profile-record-shapes", action="store_true")
 
     # sglang target model backend related args
-    sglang_group = parser.add_argument_group("sglang target model backend")
-    SGLangBackendArgs.add_args(sglang_group)
+    # sglang_group = parser.add_argument_group("sglang target model backend")
+    # SGLangBackendArgs.add_args(sglang_group)
 
     # tracker related args
     tracker_group = parser.add_argument_group("tracker")
@@ -258,18 +259,19 @@ def build_target_model(
                     torch_dtype=torch.bfloat16,
                 )
                 .eval()
-                .cuda()
+                .npu()
             )
         else:
-            if args.target_model_backend == "sglang":
-                target_model_kwargs = SGLangBackendArgs.from_args(args).to_kwargs()
-            else:
-                target_model_kwargs = {}
+            # if args.target_model_backend == "sglang":
+            #     target_model_kwargs = SGLangBackendArgs.from_args(args).to_kwargs()
+            # else:
+            #     target_model_kwargs = {}
+            target_model_kwargs = {}
             target_model = get_eagle3_target_model(
                 pretrained_model_name_or_path=args.target_model_path,
                 backend=args.target_model_backend,
                 torch_dtype=torch.bfloat16,
-                device="cuda",
+                device="npu",
                 cache_dir=args.model_download_dir,
                 **target_model_kwargs,
             )
@@ -335,7 +337,8 @@ def build_draft_model(args: Namespace) -> Tuple[AutoDraftModelConfig, nn.Module]
     draft_model_last_checkpoint = None
     if args.ckpt_dir is not None:
         if os.path.isdir(args.ckpt_dir):
-            draft_model_config = os.path.join(args.ckpt_dir, "config.json")
+            draft_model_config_file = os.path.join(args.ckpt_dir, "config.json")
+            draft_model_config = AutoDraftModelConfig.from_file(draft_model_config_file)
             draft_model_last_checkpoint = args.ckpt_dir
             print_on_rank0(f"Finetuning from base model: {draft_model_last_checkpoint}")
         else:
@@ -354,13 +357,13 @@ def build_draft_model(args: Namespace) -> Tuple[AutoDraftModelConfig, nn.Module]
             draft_model_last_checkpoint,
             attention_backend=args.attention_backend,
             torch_dtype=torch.bfloat16,
-        ).cuda()
+        ).npu()
     else:
         draft_model = AutoEagle3DraftModel.from_config(
             draft_model_config,
             attention_backend=args.attention_backend,
             torch_dtype=torch.bfloat16,
-        ).cuda()
+        ).npu()
 
     draft_model.load_embedding(args.target_model_path, embedding_key=args.embedding_key)
     draft_model.freeze_embedding()
@@ -507,19 +510,19 @@ def run_forward(
 ) -> Tuple[List[torch.Tensor], List[torch.Tensor]]:
     if args.is_vlm:
         plosses, _, acces = eagle3_model(
-            input_ids=data["input_ids"].cuda(),
-            attention_mask=data["attention_mask"].cuda(),
-            loss_mask=data["loss_mask"].cuda(),
-            pixel_values=data["pixel_values"].cuda(),
-            image_grid_thw=data["image_grid_thw"].cuda(),
+            input_ids=data["input_ids"].npu(),
+            attention_mask=data["attention_mask"].npu(),
+            loss_mask=data["loss_mask"].npu(),
+            pixel_values=data["pixel_values"].npu(),
+            image_grid_thw=data["image_grid_thw"].npu(),
         )
     else:
         if is_online:
             # we generate the eagle3 using the target model in an online fashion
             eagle3_data = target_model.generate_eagle3_data(
-                input_ids=data["input_ids"].cuda(),
-                attention_mask=data["attention_mask"].cuda(),
-                loss_mask=data["loss_mask"].cuda(),
+                input_ids=data["input_ids"].npu(),
+                attention_mask=data["attention_mask"].npu(),
+                loss_mask=data["loss_mask"].npu(),
             )
 
             input_ids = get_dp_data_shard_from_tp(eagle3_data.input_ids)
@@ -529,11 +532,11 @@ def run_forward(
             hidden_states = get_dp_data_shard_from_tp(eagle3_data.hidden_states)
         else:
             # we generate the logits using the hidden states loaded from disk
-            input_ids = data["input_ids"].cuda()
-            attention_mask = data["attention_mask"].cuda()
-            loss_mask = data["loss_mask"].cuda()
-            hidden_states = data["hidden_state"].cuda()
-            target = target_model(data["target"].cuda())
+            input_ids = data["input_ids"].npu()
+            attention_mask = data["attention_mask"].npu()
+            loss_mask = data["loss_mask"].npu()
+            hidden_states = data["hidden_state"].npu()
+            target = target_model(data["target"].npu())
             input_ids, target, loss_mask = target_model.preprocess(
                 input_ids, target, loss_mask
             )
@@ -735,7 +738,7 @@ def main():
                     torch_profiler = torch.profiler.profile(
                         activities=[
                             torch.profiler.ProfilerActivity.CPU,
-                            torch.profiler.ProfilerActivity.CUDA,
+                            torch.profiler.ProfilerActivity.NPU,
                         ],
                         with_stack=True,
                         record_shapes=args.profile_record_shapes,

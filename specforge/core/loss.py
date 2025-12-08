@@ -7,12 +7,12 @@ See the original Liger-Kernel repository at https://github.com/linkedin/Liger-Ke
 
 import torch
 import torch.nn as nn
-import triton
-import triton.language as tl
+# import triton
+# import triton.language as tl
 
 
 # Reference implementation
-@torch.compile(dynamic=None)
+# @torch.compile(dynamic=None)
 def _compute_loss(logits, target_p, position_mask):
     logits = logits.float()
     out_logp = nn.LogSoftmax(dim=2)(logits)
@@ -20,7 +20,7 @@ def _compute_loss(logits, target_p, position_mask):
     loss = -torch.sum(position_mask * plogp, 2).mean()
     return loss
 
-
+"""
 def _calculate_settings(n):
     # reference: https://github.com/unslothai/unsloth/blob/fd753fed99ed5f10ef8a9b7139588d9de9ddecfb/unsloth/kernels/utils.py#L43
 
@@ -242,3 +242,4 @@ if __name__ == "__main__":
     output1.backward()
     output2.backward()
     torch.testing.assert_close(logits.grad, logits2.grad, rtol=1e-4, atol=1e-4)
+"""

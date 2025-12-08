@@ -1,6 +1,7 @@
 from datetime import timedelta
 
 import torch
+import torch_npu
 import torch.distributed as dist
 
 from specforge.utils import print_with_rank
@@ -44,29 +45,30 @@ def init_distributed(timeout: int = 10, tp_size: int = 1):
         timeout(int): Timeout for collective communication in minutes
         tp_size(int): The degree of tensor parallelism
     """
-    dist.init_process_group(backend="nccl", timeout=timedelta(minutes=timeout))
-    local_rank = dist.get_rank() % torch.cuda.device_count()
-    torch.cuda.set_device(local_rank)
+    # dist.init_process_group(backend="nccl", timeout=timedelta(minutes=timeout))
+    dist.init_process_group(backend="hccl", timeout=timedelta(minutes=timeout))
+    local_rank = dist.get_rank() % torch_npu.npu.device_count()
+    torch_npu.npu.set_device(local_rank)
     print_with_rank(f"bind to device {local_rank}")
 
     world_size = dist.get_world_size()
     dp_size = world_size // tp_size
     assert world_size == tp_size * dp_size, "world size must be divisible by tp size"
     device_mesh = dist.device_mesh.init_device_mesh(
-        "cuda", (dp_size, tp_size), mesh_dim_names=["dp", "tp"]
+        "npu", (dp_size, tp_size), mesh_dim_names=["dp", "tp"]
     )
     print_with_rank(f"device mesh: {device_mesh}")
     tp_group = device_mesh.get_group("tp")
     dp_group = device_mesh.get_group("dp")
 
     # we need to create a 1D submesh
-    tp_device_mesh = dist.DeviceMesh.from_group(tp_group, device_type="cuda")
+    tp_device_mesh = dist.DeviceMesh.from_group(tp_group, device_type="npu")
     global _TP_GROUP, _DP_GROUP, _DEVICE_MESH, _TP_DEVICE_MESH, _DP_DEVICE_MESH
     _DEVICE_MESH = device_mesh
     _TP_GROUP = tp_group
     _TP_DEVICE_MESH = tp_device_mesh
     _DP_GROUP = dp_group
-    _DP_DEVICE_MESH = dist.DeviceMesh.from_group(dp_group, device_type="cuda")
+    _DP_DEVICE_MESH = dist.DeviceMesh.from_group(dp_group, device_type="npu")
 
 
 def destroy_distributed():

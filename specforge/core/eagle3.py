@@ -27,7 +27,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 from transformers.cache_utils import DynamicCache
 
-from specforge.core.loss import LogSoftmaxLoss
+# from specforge.core.loss import LogSoftmaxLoss
+from specforge.core.loss import _compute_loss
 from specforge.modeling.draft import Eagle3DraftModel
 from specforge.utils import padding
 
@@ -183,7 +184,8 @@ class OnlineEagle3Model(Eagle3Model):
                 )
 
             # Step 5.6: calculate loss, in-place modifies logits!
-            loss = LogSoftmaxLoss.apply(logits, target_p, position_mask)
+            # loss = LogSoftmaxLoss.apply(logits, target_p, position_mask)
+            loss = _compute_loss(logits, target_p, position_mask)
             plosses.append(loss)
 
             if not is_last:
@@ -589,7 +591,7 @@ def _compute_target_p_padded(target, t2d, loss_mask, length):
         return target_p_padded, position_mask
 
 
-@torch.compile(dynamic=None)
+# @torch.compile(dynamic=None)
 def _compute_target_p(target, t2d, loss_mask):
     target_head = target
     target_max_token = target_head.argmax(-1)
@@ -603,7 +605,7 @@ def _compute_target_p(target, t2d, loss_mask):
     return target_p, position_mask
 
 
-@torch.compile(dynamic=None)
+# @torch.compile(dynamic=None)
 def _compute_metric_acc(logits, target_p, position_mask, loss_mask):
     return (
         (logits.argmax(-1) == target_p.argmax(-1)) * position_mask.squeeze(-1)
